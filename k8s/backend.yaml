@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: softoolshop-deployment
+  namespace: softools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: softoolshop
+  template:
+    metadata:
+      labels:
+        app: softoolshop
+    spec:
+      containers:
+        - name: softoolshop
+          image: inddocker786/softoolshop:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8083
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:mysql://mysql-service.softools.svc.cluster.local:3306/soft_tool_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: password
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              value: none
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: softoolshop-service
+  namespace: softools
+spec:
+  selector:
+    app: softoolshop
+  ports:
+    - port: 8083
+      targetPort: 8083
+  type: ClusterIP

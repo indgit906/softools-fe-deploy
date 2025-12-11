@@ -1,70 +1,46 @@
 pipeline {
     agent any
-
     environment {
-        // Workspace-local npm cache to avoid root permission issues
-        NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
+        DOCKERHUB_USER = 'inddocker786'
+        IMAGE_NAME = "${DOCKERHUB_USER}/softools-fe"
     }
-
-    options {
-        // Keep logs of last 10 builds
-        buildDiscarder(logRotator(numToKeepStr: '10'))
-        // Timeout pipeline if it runs too long
-        timeout(time: 30, unit: 'MINUTES')
-    }
-
     stages {
-        stage('Checkout SCM') {
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+        stage('Install & Build') {
             steps {
-                git(
-                    url: 'https://github.com/indgit906/softools-fe.git',
-                    branch: 'main',
-                    credentialsId: 'YOUR_GIT_CREDENTIAL_ID' // Replace with your Git credential
-                )
+                sh 'npm install'
+                sh 'npm run build'
             }
         }
-
-        stage('Build & Test in Docker') {
+        stage('Build Docker Image') {
             steps {
                 script {
-                    docker.image('node:18').inside {
-                        sh '''
-                            echo "Using workspace-local npm cache: $NPM_CONFIG_CACHE"
-                            mkdir -p $NPM_CONFIG_CACHE
-                            npm install
-                            npm test
-                        '''
-                    }
+                    sh "docker build -t ${IMAGE_NAME}:${env.BUILD_NUMBER} -t ${IMAGE_NAME}:latest ."
                 }
             }
         }
-
-        stage('Optional: Build Docker Image') {
-            when {
-                expression { return fileExists('Dockerfile') }
-            }
+        stage('Push to DockerHub') {
             steps {
-                script {
-                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhubcred') { // Replace with your DockerHub credentials ID
-                        def app = docker.build("your-dockerhub-username/softools-fe:latest")
-                        app.push()
-                    }
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    sh 'echo $PASS | docker login -u $USER --password-stdin'
+                    sh "docker push ${IMAGE_NAME}:${env.BUILD_NUMBER}"
+                    sh "docker push ${IMAGE_NAME}:latest"
                 }
             }
         }
-    }
-
-    post {
-        always {
-            echo "🧹 Cleaning workspace..."
-            cleanWs()
-        }
-        success {
-            echo "✅ Pipeline succeeded!"
-        }
-        failure {
-            echo "❌ Pipeline failed!"
+        stage('Deploy to K8s') {
+            steps {
+                sh '''
+                  kubectl apply -f k8s/namespace.yaml || true
+                  kubectl apply -f k8s/mysql.yaml
+                  kubectl apply -f k8s/backend.yaml
+                  kubectl apply -f k8s/frontend.yaml
+                  kubectl rollout restart deployment softoolshop-deployment -n softools
+                  kubectl rollout restart deployment softools-fe-deployment -n softools
+                '''
+            }
         }
     }
 }
-

@@ -1,18 +1,16 @@
-FROM nginx:alpine
+# Stage 1: Build Angular
+FROM node:18 AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
 
-# Remove default html
-RUN rm -rf /usr/share/nginx/html/*
-
-# Copy built Angular app
-COPY dist/softools /usr/share/nginx/html
-
-# Copy SSL certs
-COPY ssl/fullchain.pem /etc/ssl/certs/fullchain.pem
-COPY ssl/private.key /etc/ssl/private/private.key
-
-# Copy custom Nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 443
-
+# Stage 2: Serve Nginx
+FROM nginx:stable
+WORKDIR /usr/share/nginx/html
+RUN rm -rf ./*
+# NOTE: Ensure 'dist/softools/' matches your angular.json output path
+COPY --from=build /app/dist/softools/ .
+EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
